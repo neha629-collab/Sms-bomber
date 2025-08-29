@@ -14,9 +14,10 @@ from telegram.ext import (
 )
 import database
 
-# --- Configuration ---
-OWNER_ID = 1692540458
-LOG_CHANNEL_ID = -1003053960610
+# --- Configuration from Environment Variables (Most Secure Method) ---
+# এই তিনটি তথ্য এখন Render থেকে নিরাপদে লোড হবে
+OWNER_ID = int(os.environ.get('OWNER_ID'))
+LOG_CHANNEL_ID = int(os.environ.get('LOG_CHANNEL_ID'))
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 
 # --- Logging Setup ---
@@ -137,7 +138,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Click a button below to start.",
         reply_markup=main_markup, parse_mode='HTML', disable_web_page_preview=True
     )
-    return MAIN_MENU
+    return 0 # MAIN_MENU state
 
 async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     total_users, total_tasks = database.get_public_stats()
@@ -157,7 +158,7 @@ async def ask_for_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     number = update.message.text
     if not (number.startswith("01") and len(number) == 11 and number.isdigit()):
         await update.message.reply_text("❌ Invalid number. Returning to main menu.", reply_markup=main_markup)
-        return MAIN_MENU
+        return 0 # MAIN_MENU state
     context.user_data['number'] = number
     await update.message.reply_text("Now, enter the amount (1-50):")
     return ASK_AMOUNT
@@ -168,7 +169,7 @@ async def start_bombing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not (1 <= amount <= 50): raise ValueError
     except (ValueError):
         await update.message.reply_text("❌ Invalid amount. Returning to main menu.", reply_markup=main_markup)
-        return MAIN_MENU
+        return 0 # MAIN_MENU state
 
     number = context.user_data['number']
     user = update.effective_user
@@ -176,19 +177,19 @@ async def start_bombing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await send_log_message(context, user, number, amount)
     await update.message.reply_text(f"⏳ SMS Bombing Started on {number}...", reply_markup=main_markup)
     threading.Thread(target=process_requests, args=(number, amount, context, update.message.chat_id)).start()
-    return MAIN_MENU
+    return 0 # MAIN_MENU state
 
 # --- Admin Panel ---
 async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not is_admin(update):
         await update.message.reply_text("You are not authorized to use this command.")
-        return MAIN_MENU
+        return 0 # MAIN_MENU state
     await update.message.reply_text("Welcome to the Admin Panel.", reply_markup=admin_markup)
     return ADMIN_PANEL
 
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Returning to the main menu.", reply_markup=main_markup)
-    return MAIN_MENU
+    return 0 # MAIN_MENU state
 
 # --- Broadcast Feature ---
 async def broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -275,7 +276,7 @@ async def api_status_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Operation cancelled. Returning to main menu.", reply_markup=main_markup)
     context.user_data.clear()
-    return MAIN_MENU
+    return 0 # MAIN_MENU state
 
 # --- Bot Setup ---
 async def post_init(application: Application) -> None:
@@ -295,10 +296,9 @@ def main() -> None:
             MessageHandler(filters.Regex('^💣 Start Bombing$'), ask_for_number),
             MessageHandler(filters.Regex('^📊 Statistics$'), stats_handler),
             CommandHandler("admin", admin_panel_handler),
-            MessageHandler(filters.Regex('^⬅️ Back to Main Menu$'), back_to_main_menu)
         ],
         states={
-            MAIN_MENU: [
+            0: [ # MAIN_MENU
                 MessageHandler(filters.Regex('^💣 Start Bombing$'), ask_for_number),
                 MessageHandler(filters.Regex('^📊 Statistics$'), stats_handler),
                 CommandHandler("admin", admin_panel_handler)
@@ -312,7 +312,7 @@ def main() -> None:
                 MessageHandler(filters.Regex('^⬅️ Back to Main Menu$'), back_to_main_menu),
                 CallbackQueryHandler(broadcast_callback)
             ],
-            BROADCAST_CONFIRM: [MessageHandler(filters.ALL, broadcast_confirm)],
+            BROADCAST_CONFIRM: [MessageHandler(filters.ALL & ~filters.COMMAND, broadcast_confirm)],
             ASK_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, user_stats_result)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
