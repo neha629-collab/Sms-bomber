@@ -1,4 +1,4 @@
-# database.py (ব্যান ম্যানেজমেন্টসহ চূড়ান্ত সংস্করণ)
+# database.py (ব্যান ম্যানেজমেন্টসহ চূড়ান্ত এবং পরীক্ষিত সংস্করণ)
 import os
 import psycopg2
 import json
@@ -43,7 +43,6 @@ def setup_database():
     if conn:
         try:
             with conn.cursor() as cur:
-                # --- users টেবিল আপডেট করা হয়েছে ---
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         user_id BIGINT PRIMARY KEY,
@@ -53,7 +52,6 @@ def setup_database():
                         is_banned BOOLEAN DEFAULT FALSE
                     );
                 """)
-                # --- বাকি টেবিলগুলো অপরিবর্তিত ---
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS logs (
                         log_id SERIAL PRIMARY KEY, user_id BIGINT, target_number VARCHAR(20),
@@ -82,7 +80,6 @@ def setup_database():
         finally:
             conn.close()
 
-# --- নতুন ব্যান ম্যানেজমেন্ট ফাংশন ---
 def ban_user(user_id: int):
     conn = get_connection()
     if conn:
@@ -130,7 +127,6 @@ def get_all_banned_users():
             conn.close()
     return []
 
-# ... (বাকি সব ফাংশন অপরিবর্তিত থাকবে) ...
 def add_admin(user_id: int):
     conn = get_connection()
     if conn:
@@ -142,6 +138,7 @@ def add_admin(user_id: int):
         finally:
             conn.close()
     return False
+
 def remove_admin(user_id: int):
     conn = get_connection()
     if conn:
@@ -153,6 +150,7 @@ def remove_admin(user_id: int):
         finally:
             conn.close()
     return False
+
 def get_all_admins():
     conn = get_connection()
     if conn:
@@ -163,6 +161,7 @@ def get_all_admins():
         finally:
             conn.close()
     return []
+
 def is_admin_in_db(user_id: int):
     conn = get_connection()
     if conn:
@@ -173,6 +172,7 @@ def is_admin_in_db(user_id: int):
         finally:
             conn.close()
     return False
+
 def add_or_update_user(user_id: int, first_name: str, username: str):
     conn = get_connection()
     if conn:
@@ -185,6 +185,7 @@ def add_or_update_user(user_id: int, first_name: str, username: str):
                 conn.commit()
         finally:
             conn.close()
+
 def add_log(user_id: int, target_number: str, amount: int):
     conn = get_connection()
     if conn:
@@ -194,6 +195,7 @@ def add_log(user_id: int, target_number: str, amount: int):
                 conn.commit()
         finally:
             conn.close()
+
 def get_public_stats():
     conn = get_connection()
     if conn:
@@ -207,6 +209,7 @@ def get_public_stats():
         finally:
             conn.close()
     return 0, 0
+
 def get_all_user_ids():
     conn = get_connection()
     if conn:
@@ -217,6 +220,7 @@ def get_all_user_ids():
         finally:
             conn.close()
     return []
+
 def get_user_stats(user_id: int):
     conn = get_connection()
     if conn:
@@ -224,12 +228,13 @@ def get_user_stats(user_id: int):
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM logs WHERE user_id = %s;", (user_id,))
                 task_count = cur.fetchone()[0]
-                cur.execute("SELECT first_name, username FROM users WHERE user_id = %s;", (user_id,))
+                cur.execute("SELECT first_name, username, is_banned FROM users WHERE user_id = %s;", (user_id,))
                 user_info = cur.fetchone()
                 return user_info, task_count
         finally:
             conn.close()
     return None, 0
+
 def get_all_apis():
     conn = get_connection()
     if conn:
@@ -240,30 +245,3 @@ def get_all_apis():
         finally:
             conn.close()
     return []
-def add_api(name, url, method, headers, data_template):
-    conn = get_connection()
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO apis (name, url, method, headers, data_template) VALUES (%s, %s, %s, %s, %s);",
-                    (name, url, method, json.dumps(headers), json.dumps(data_template))
-                )
-                conn.commit()
-                return True
-        except psycopg2.IntegrityError:
-            return False
-        finally:
-            conn.close()
-    return False
-def remove_api(api_id: int):
-    conn = get_connection()
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM apis WHERE api_id = %s;", (api_id,))
-                conn.commit()
-                return cur.rowcount > 0
-        finally:
-            conn.close()
-    return False
