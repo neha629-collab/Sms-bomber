@@ -1,4 +1,4 @@
-# database.py
+# database.py (অ্যাডমিন ম্যানেজমেন্টসহ আপডেটেড)
 import os
 import psycopg2
 import json
@@ -64,8 +64,13 @@ def setup_database():
                         method VARCHAR(10) NOT NULL, headers JSONB, data_template JSONB, is_active BOOLEAN DEFAULT TRUE
                     );
                 """)
+                # --- নতুন অ্যাডমিন টেবিল ---
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS admins (
+                        user_id BIGINT PRIMARY KEY
+                    );
+                """)
                 
-                # Check if apis table is empty, if so, populate it
                 cur.execute("SELECT COUNT(*) FROM apis;")
                 if cur.fetchone()[0] == 0:
                     populate_initial_apis(cur)
@@ -75,6 +80,54 @@ def setup_database():
         finally:
             conn.close()
 
+# --- নতুন অ্যাডমিন ম্যানেজমেন্ট ফাংশন ---
+def add_admin(user_id: int):
+    conn = get_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO admins (user_id) VALUES (%s) ON CONFLICT DO NOTHING;", (user_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+    return False
+
+def remove_admin(user_id: int):
+    conn = get_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM admins WHERE user_id = %s;", (user_id,))
+                conn.commit()
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+    return False
+
+def get_all_admins():
+    conn = get_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id FROM admins;")
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
+    return []
+
+def is_admin_in_db(user_id: int):
+    conn = get_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM admins WHERE user_id = %s;", (user_id,))
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+    return False
+
+# ... (বাকি সব ফাংশন যেমন add_or_update_user, add_log, get_public_stats ইত্যাদি অপরিবর্তিত থাকবে) ...
 def add_or_update_user(user_id: int, first_name: str, username: str):
     conn = get_connection()
     if conn:
@@ -87,7 +140,6 @@ def add_or_update_user(user_id: int, first_name: str, username: str):
                 conn.commit()
         finally:
             conn.close()
-
 def add_log(user_id: int, target_number: str, amount: int):
     conn = get_connection()
     if conn:
@@ -97,7 +149,6 @@ def add_log(user_id: int, target_number: str, amount: int):
                 conn.commit()
         finally:
             conn.close()
-
 def get_public_stats():
     conn = get_connection()
     if conn:
@@ -111,7 +162,6 @@ def get_public_stats():
         finally:
             conn.close()
     return 0, 0
-
 def get_all_user_ids():
     conn = get_connection()
     if conn:
@@ -122,7 +172,6 @@ def get_all_user_ids():
         finally:
             conn.close()
     return []
-
 def get_user_stats(user_id: int):
     conn = get_connection()
     if conn:
@@ -136,7 +185,6 @@ def get_user_stats(user_id: int):
         finally:
             conn.close()
     return None, 0
-
 def get_all_apis():
     conn = get_connection()
     if conn:
@@ -147,7 +195,6 @@ def get_all_apis():
         finally:
             conn.close()
     return []
-
 def add_api(name, url, method, headers, data_template):
     conn = get_connection()
     if conn:
@@ -159,12 +206,11 @@ def add_api(name, url, method, headers, data_template):
                 )
                 conn.commit()
                 return True
-        except psycopg2.IntegrityError: # For duplicate name
+        except psycopg2.IntegrityError:
             return False
         finally:
             conn.close()
     return False
-
 def remove_api(api_id: int):
     conn = get_connection()
     if conn:
