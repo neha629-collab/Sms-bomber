@@ -1,4 +1,2 @@
 python-telegram-bot
-requests
-psycopg2-binary
-Flask
+replit
