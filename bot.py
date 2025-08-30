@@ -1,5 +1,4 @@
-
-# bot.py (চূড়ান্ত সংস্করণ - ব্যান ম্যানেজমেন্টসহ)
+# bot.py (চূড়ান্ত সংস্করণ - ফ্রিজ সমস্যার সমাধানসহ)
 import os
 import requests
 import random
@@ -7,6 +6,7 @@ import string
 import threading
 import time
 import json
+import asyncio # নতুন ইম্পোর্ট
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 from flask import Flask
@@ -134,7 +134,7 @@ def is_admin(update: Update) -> bool:
 
 async def check_banned(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user_id = update.effective_user.id
-    if database.is_user_banned(user_id):
+    if await asyncio.to_thread(database.is_user_banned, user_id):
         await update.message.reply_text("❌ You are banned from using this bot.")
         return True
     return False
@@ -155,7 +155,7 @@ async def send_log_message(context: ContextTypes.DEFAULT_TYPE, user, target_numb
 # --- Main Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    database.add_or_update_user(user.id, user.first_name, user.username)
+    await asyncio.to_thread(database.add_or_update_user, user.id, user.first_name, user.username)
     if await check_banned(update, context): return ConversationHandler.END
     
     credit_text = "This bot is made by <a href='https://t.me/abdur081'>Abdur Rahman</a>."
@@ -170,7 +170,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await check_banned(update, context): return
-    total_users, total_tasks = database.get_public_stats()
+    total_users, total_tasks = await asyncio.to_thread(database.get_public_stats)
     message = (f"📊 **Bot Statistics**\n\n"
                f"👥 **Total Unique Users:** {total_users}\n"
                f"💥 **Total Bombing Tasks Initiated:** {total_tasks}")
@@ -198,15 +198,21 @@ async def start_bombing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     except (ValueError):
         await update.message.reply_text("❌ Invalid amount (1-1000). Returning to main menu.", reply_markup=main_markup)
         return MAIN_MENU
+    
     number = context.user_data['number']
     user = update.effective_user
-    database.add_log(user.id, number, amount)
+    
+    # --- সমস্যার সমাধান: ডাটাবেসের কাজটিকে আলাদা থ্রেডে পাঠানো ---
+    await asyncio.to_thread(database.add_log, user.id, number, amount)
+    
     await send_log_message(context, user, number, amount)
     progress_message = await update.message.reply_text(f"⏳ Starting SMS Bombing on {number}...", reply_markup=main_markup)
+    
     threading.Thread(
         target=process_requests, 
         args=(number, amount, context, update.message.chat_id, progress_message.message_id)
     ).start()
+    
     return MAIN_MENU
 
 # --- Admin Panel ---
@@ -238,7 +244,7 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     if query.data == 'broadcast_send':
         await query.edit_message_text(text="Broadcasting... Please wait.")
-        user_ids = database.get_all_user_ids()
+        user_ids = await asyncio.to_thread(database.get_all_user_ids)
         sent_count, failed_count = 0, 0
         for user_id in user_ids:
             try:
@@ -246,7 +252,7 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 sent_count += 1
             except Exception:
                 failed_count += 1
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
         await query.edit_message_text(text=f"Broadcast finished.\n\nSent: {sent_count}\nFailed: {failed_count}", reply_markup=admin_markup)
     else:
         await query.edit_message_text(text="Broadcast cancelled.", reply_markup=admin_markup)
@@ -260,7 +266,7 @@ async def user_stats_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def user_stats_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id = int(update.message.text)
-        user_info, task_count = database.get_user_stats(user_id)
+        user_info, task_count = await asyncio.to_thread(database.get_user_stats, user_id)
         if user_info:
             name, username, is_banned = user_info
             status = "Banned" if is_banned else "Active"
@@ -278,7 +284,7 @@ async def user_stats_result(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 # --- API Status Feature ---
 async def api_status_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    apis = database.get_all_apis()
+    apis = await asyncio.to_thread(database.get_all_apis)
     if not apis:
         await update.message.reply_text("No APIs in the database to check.", reply_markup=admin_markup)
         return ADMIN_PANEL
@@ -313,7 +319,7 @@ async def add_admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def add_admin_finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id = int(update.message.text)
-        if database.add_admin(user_id):
+        if await asyncio.to_thread(database.add_admin, user_id):
             await update.message.reply_text(f"✅ Admin `{user_id}` added successfully.", parse_mode='MarkdownV2')
         else:
             await update.message.reply_text("This user is already an admin.")
@@ -330,7 +336,7 @@ async def remove_admin_finish(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_id = int(update.message.text)
         if user_id == OWNER_ID:
             await update.message.reply_text("❌ You cannot remove the bot owner.")
-        elif database.remove_admin(user_id):
+        elif await asyncio.to_thread(database.remove_admin, user_id):
             await update.message.reply_text(f"✅ Admin `{user_id}` removed successfully.", parse_mode='MarkdownV2')
         else:
             await update.message.reply_text("This user is not an admin.")
@@ -339,7 +345,7 @@ async def remove_admin_finish(update: Update, context: ContextTypes.DEFAULT_TYPE
     return MANAGE_ADMINS
 
 async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    admin_ids = database.get_all_admins()
+    admin_ids = await asyncio.to_thread(database.get_all_admins)
     message = "<b>👑 Bot Owner:</b>\n"
     try:
         owner_chat = await context.bot.get_chat(OWNER_ID)
@@ -371,11 +377,12 @@ async def ban_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def ban_user_finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id_to_ban = int(update.message.text)
+        is_target_admin = await asyncio.to_thread(database.is_admin_in_db, user_id_to_ban)
         if user_id_to_ban == OWNER_ID:
             await update.message.reply_text("❌ You cannot ban the bot owner.")
-        elif database.is_admin_in_db(user_id_to_ban) and not is_owner(update):
+        elif is_target_admin and not is_owner(update):
             await update.message.reply_text("❌ Admins can only be banned by the owner.")
-        elif database.ban_user(user_id_to_ban):
+        elif await asyncio.to_thread(database.ban_user, user_id_to_ban):
             await update.message.reply_text(f"✅ User `{user_id_to_ban}` has been banned.", parse_mode='MarkdownV2')
         else:
             await update.message.reply_text("User not found or already banned.")
@@ -390,7 +397,7 @@ async def unban_user_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def unban_user_finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id_to_unban = int(update.message.text)
-        if database.unban_user(user_id_to_unban):
+        if await asyncio.to_thread(database.unban_user, user_id_to_unban):
             await update.message.reply_text(f"✅ User `{user_id_to_unban}` has been unbanned.", parse_mode='MarkdownV2')
         else:
             await update.message.reply_text("User not found or not banned.")
@@ -399,7 +406,7 @@ async def unban_user_finish(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return MANAGE_BANS
 
 async def list_banned(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    banned_ids = database.get_all_banned_users()
+    banned_ids = await asyncio.to_thread(database.get_all_banned_users)
     if not banned_ids:
         await update.message.reply_text("No users are currently banned.")
         return MANAGE_BANS
